@@ -151,13 +151,7 @@ def main():
 
     pg.init()
 
-    width = 1000
-    height = 900
-    screen = pg.display.set_mode((width, height))
-    last_time = time.perf_counter()
-    drawer = Drawer(screen)
-    menu, box, timer = init_ui(screen)
-    perform_execution = True
+    
 
     while alive:
         handle_events(pg.event.get(), menu)
