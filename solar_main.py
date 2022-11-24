@@ -1,173 +1,105 @@
 # coding: utf-8
 # license: GPLv3
 
-import pygame as pg
-from source_code.solar_vis import *
-from source_code.solar_model import *
-from source_code.solar_input import *
-from source_code.solar_objects import *
-import thorpy
-import time
-import numpy as np
+"""Модуль визуализации.
+Нигде, кроме этого модуля, не используются экранные координаты объектов.
+Функции, создающие гaрафические объекты и перемещающие их на экране, принимают физические координаты
+"""
 
-timer = None
+header_font = "Arial-16"
+"""Шрифт в заголовке"""
 
-alive = True
+window_width = 800
+"""Ширина окна"""
 
-perform_execution = False
-"""Флаг цикличности выполнения расчёта"""
+window_height = 800
+"""Высота окна"""
 
-model_time = 0
-"""Физическое время от начала расчёта.
-Тип: float"""
-
-time_scale = 1000.0
-"""Шаг по времени при моделировании.
-Тип: float"""
-
-space_objects = []
-"""Список космических объектов."""
+scale_factor = None
+"""Масштабирование экранных координат по отношению к физическим.
+Тип: float
+Мера: количество пикселей на один метр."""
 
 
-def execution(delta):
-    """Функция исполнения -- выполняется циклически, вызывая обработку всех небесных тел,
-    а также обновляя их положение на экране.
-    Цикличность выполнения зависит от значения глобальной переменной perform_execution.
-    При perform_execution == True функция запрашивает вызов самой себя по таймеру через от 1 мс до 100 мс.
-    """
-    global model_time
-    global displayed_time
-    recalculate_space_objects_positions([dr for dr in space_objects], delta)
-    # for obj in space_objects:
-        # print(obj.Fx)
-    model_time += delta
+def calculate_scale_factor(max_distance):
+    """Вычисляет значение глобальной переменной **scale_factor** по данной характерной длине"""
+    global scale_factor
+    scale_factor = 0.4*min(window_height, window_width)/max_distance
+    print('Scale factor:', scale_factor)
 
 
-def start_execution():
-    """Обработчик события нажатия на кнопку Start.
-    Запускает циклическое исполнение функции execution.
-    """
-    global perform_execution
-    perform_execution = True
-
-
-def pause_execution():
-    global perform_execution
-    perform_execution = False
-
-
-def stop_execution():
-    """Обработчик события нажатия на кнопку Start.
-    Останавливает циклическое исполнение функции execution.
-    """
-    global alive
-    alive = False
-
-
-def open_file():
-    """Открывает диалоговое окно выбора имени файла и вызывает
-    функцию считывания параметров системы небесных тел из данного файла.
-    Считанные объекты сохраняются в глобальный список space_objects
-    """
-    global space_objects
-    global browser
-    global model_time
-
-    model_time = 0.0
-    in_filename = "solar_system.txt"
-    space_objects = read_space_objects_data_from_file(in_filename)
-    max_distance = max([max(abs(obj.obj.x), abs(obj.obj.y)) for obj in space_objects])
-    calculate_scale_factor(max_distance)
-
-
-def handle_events(events, menu):
-    global alive
-    for event in events:
-        menu.react(event)
-        if event.type == pg.QUIT:
-            alive = False
-
-
-def slider_to_real(val):
-    return np.exp(10 + val)
-
-
-def slider_reaction(event):
-    global time_scale
-    time_scale = slider_to_real(event.el.get_value())
-
-
-def init_ui(screen):
-    global browser
-    slider = thorpy.SliderX(300, (0, 0.5), "Simulation speed")
-    slider.user_func = slider_reaction
-    button_stop = thorpy.make_button("Quit", func=stop_execution)
-    button_pause = thorpy.make_button("Pause", func=pause_execution)
-    button_play = thorpy.make_button("Play", func=start_execution)
-    timer = thorpy.OneLineText("Seconds passed")
-
-    button_load = thorpy.make_button(text="Load a file", func=open_file)
-
-    box = thorpy.Box(elements=[
-        slider,
-        button_pause,
-        button_stop,
-        button_play,
-        button_load,
-        timer])
-    reaction1 = thorpy.Reaction(reacts_to=thorpy.constants.THORPY_EVENT,
-                                reac_func=slider_reaction,
-                                event_args={"id": thorpy.constants.EVENT_SLIDE},
-                                params={},
-                                reac_name="slider reaction")
-    box.add_reaction(reaction1)
-
-    menu = thorpy.Menu(box)
-    for element in menu.get_population():
-        element.surface = screen
-
-    box.set_topleft((0, 0))
-    box.blit()
-    box.update()
-    return menu, box, timer
-
-
-def main():
-    """Главная функция главного модуля.
-    Создаёт объекты графического дизайна библиотеки tkinter: окно, холст, фрейм с кнопками, кнопки.
+def scale_x(x):
+    """Возвращает экранную **x** координату по **x** координате модели.
+    Принимает вещественное число, возвращает целое число.
+    В случае выхода **x** координаты за пределы экрана возвращает
+    координату, лежащую за пределами холста.
+    Параметры:
+    **x** — x-координата модели.
     """
 
-    global physical_time
-    global displayed_time
-    global time_step
-    global time_speed
-    global space
-    global start_button
-    global perform_execution
-    global timer
+    return int(x*scale_factor) + window_width//2
 
-    print('Modelling started!')
-    physical_time = 0
 
-    pg.init()
+def scale_y(y):
+    """Возвращает экранную **y** координату по **y** координате модели.
+    Принимает вещественное число, возвращает целое число.
+    В случае выхода **y** координаты за пределы экрана возвращает
+    координату, лежащую за пределами холста.
+    Направление оси развёрнуто, чтобы у модели ось **y** смотрела вверх.
+    Параметры:
+    **y** — y-координата модели.
+    """
 
-    
+    return window_height - (int(y*scale_factor) + window_height//2)
 
-    while alive:
-        handle_events(pg.event.get(), menu)
-        cur_time = time.perf_counter()
-        if perform_execution:
-            for i in range (500):
-                execution((cur_time - last_time) * time_scale)
-            text = "%d seconds passed" % (500*int(model_time))
-            timer.set_text(text)
+def create_star_image(space, star):
+    """Создаёт отображаемый объект звезды.
+    Параметры:
+    **space** — холст для рисования.
+    **star** — объект звезды.
+    """
 
-        last_time = cur_time
-        drawer.update(space_objects, box)
-        time.sleep(1.0 / 60)
+    x = scale_x(star.x)
+    y = scale_y(star.y)
+    r = star.R
+    star.image = space.create_oval([x - r, y - r], [x + r, y + r], fill=star.color)
 
-    print('Modelling finished!')
 
-# use this version
+def create_planet_image(space, planet):
+    """Создаёт отображаемый объект планеты.
+    Параметры:
+    **space** — холст для рисования.
+    **planet** — объект планеты.
+    """
+    x = scale_x(planet.x)
+    y = scale_y(planet.y)
+    r = planet.R
+    planet.image = space.create_oval([x - r, y - r], [x + r, y + r], fill = planet.color)
+
+def update_system_name(space, system_name):
+    """Создаёт на холсте текст с названием системы небесных тел.
+    Если текст уже был, обновляет его содержание.
+    Параметры:
+    **space** — холст для рисования.
+    **system_name** — название системы тел.
+    """
+    space.create_text(30, 80, tag="header", text=system_name, font=header_font)
+
+
+def update_object_position(space, body):
+    """Перемещает отображаемый объект на холсте.
+    Параметры:
+    **space** — холст для рисования.
+    **body** — тело, которое нужно переместить.
+    """
+    x = scale_x(body.x)
+    y = scale_y(body.y)
+    r = body.R
+    if x + r < 0 or x - r > window_width or y + r < 0 or y - r > window_height:
+        space.coords(body.image, window_width + r, window_height + r,
+                     window_width + 2*r, window_height + 2*r)  # положить за пределы окна
+    space.coords(body.image, x - r, y - r, x + r, y + r)
+
+
 if __name__ == "__main__":
-    main()
+    print("This module is not for direct call!")
